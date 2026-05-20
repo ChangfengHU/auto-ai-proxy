@@ -285,14 +285,13 @@ TSVC
     sudo systemctl daemon-reload
     sudo systemctl enable --now vertex-proxy-tunnel
 
-    # 等待域名出现在日志里
+    # 等待域名出现在 journal 里
     echo "   等待隧道建立..."
     for i in $(seq 1 30); do
       sleep 1
-      PUBLIC_URL=$(grep -o 'https://[^ ]*chxyka[^ ]*\|https://[^ ]*vyibc[^ ]*' "$TUNNEL_LOG" 2>/dev/null | tail -1)
-      if [[ -n "$PUBLIC_URL" ]]; then
-        break
-      fi
+      PUBLIC_URL=$(sudo journalctl -u vertex-proxy-tunnel --no-pager -n 30 2>/dev/null \
+        | grep -o 'https://[^ ]*chxyka[^ ]*\|https://[^ ]*vyibc[^ ]*' | tail -1)
+      [[ -n "$PUBLIC_URL" ]] && break
     done
 
     echo ""
