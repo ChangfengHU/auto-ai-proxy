@@ -254,47 +254,68 @@ if [[ "$PUBLIC" == "1" ]]; then
   echo ""
   echo "🌐 正在开通公网域名（后台常驻）..."
 
-  # 先跑一次确保 agent.js 和依赖已下载、token 已保存
-  INIT_CMD="bash <(curl -fsSL https://skill.vyibc.com/auto-domain.sh) --port=$PORT --name=$DOMAIN_NAME"
-  [[ -n "$DOMAIN_TOKEN" ]] && INIT_CMD="$INIT_CMD --token=$DOMAIN_TOKEN"
-
-  # 用 systemd 把 auto-domain 也变成后台服务
   AUTO_DOMAIN_SCRIPT="$CACHE_DIR/auto-domain-start.sh"
+  TUNNEL_LOG="$CACHE_DIR/tunnel.log"
+
+  # 写启动脚本（systemd 用这个）
   cat > "$AUTO_DOMAIN_SCRIPT" <<ADEOF
 #!/usr/bin/env bash
-set -a && source $ENV_FILE 2>/dev/null; set +a
 exec bash <(curl -fsSL https://skill.vyibc.com/auto-domain.sh) --port=$PORT --name=$DOMAIN_NAME ${DOMAIN_TOKEN:+--token=$DOMAIN_TOKEN}
 ADEOF
   chmod +x "$AUTO_DOMAIN_SCRIPT"
 
   if command -v systemctl &>/dev/null && [[ -d /etc/systemd/system ]]; then
+    # 注册 systemd 服务
     sudo tee /etc/systemd/system/vertex-proxy-tunnel.service > /dev/null <<TSVC
 [Unit]
 Description=Vertex Proxy Auto-Domain Tunnel
 After=network.target vertex-proxy.service
-Wants=vertex-proxy.service
 
 [Service]
 User=$USER
 ExecStart=/bin/bash $AUTO_DOMAIN_SCRIPT
 Restart=always
 RestartSec=10
+StandardOutput=append:$TUNNEL_LOG
+StandardError=append:$TUNNEL_LOG
 
 [Install]
 WantedBy=multi-user.target
 TSVC
     sudo systemctl daemon-reload
+    sudo systemctl enable --now vertex-proxy-tunnel
 
-    # 先前台跑一次拿到域名，Ctrl+C 后 systemd 接管
-    echo "   首次运行获取域名（完成后按 Ctrl+C，服务将自动转为后台）..."
+    # 等待域名出现在日志里
+    echo "   等待隧道建立..."
+    for i in $(seq 1 30); do
+      sleep 1
+      PUBLIC_URL=$(grep -o 'https://[^ ]*chxyka[^ ]*\|https://[^ ]*vyibc[^ ]*' "$TUNNEL_LOG" 2>/dev/null | tail -1)
+      if [[ -n "$PUBLIC_URL" ]]; then
+        break
+      fi
+    done
+
     echo ""
-    trap 'echo "" && echo "🔄 转为后台服务..." && sudo systemctl enable --now vertex-proxy-tunnel && echo "✅ auto-domain 已后台常驻（开机自启）" && echo "   查看状态: sudo systemctl status vertex-proxy-tunnel" && echo "   查看日志: sudo journalctl -u vertex-proxy-tunnel -f"' INT
-    eval "$INIT_CMD"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  ✅ 公网域名已就绪（后台常驻）"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  公网 Base URL : ${PUBLIC_URL:-（等待分配中）}/v1"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  查看状态 : sudo systemctl status vertex-proxy-tunnel"
+    echo "  查看日志 : sudo journalctl -u vertex-proxy-tunnel -f"
   else
-    # 无 systemd，直接后台 nohup
-    nohup bash -c "$INIT_CMD" >> "$CACHE_DIR/tunnel.log" 2>&1 &
-    echo "✅ auto-domain 已后台启动 (PID: $!)"
-    echo "   日志: $CACHE_DIR/tunnel.log"
+    # 无 systemd，nohup 后台运行
+    > "$TUNNEL_LOG"
+    nohup bash "$AUTO_DOMAIN_SCRIPT" >> "$TUNNEL_LOG" 2>&1 &
+    echo "   等待隧道建立..."
+    for i in $(seq 1 30); do
+      sleep 1
+      PUBLIC_URL=$(grep -o 'https://[^ ]*chxyka[^ ]*\|https://[^ ]*vyibc[^ ]*' "$TUNNEL_LOG" 2>/dev/null | tail -1)
+      [[ -n "$PUBLIC_URL" ]] && break
+    done
+    echo "  ✅ 公网 Base URL : ${PUBLIC_URL:-（等待分配中）}/v1"
+    echo "  日志 : $TUNNEL_LOG"
   fi
 else
   echo ""
