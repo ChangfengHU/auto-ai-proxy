@@ -11,10 +11,11 @@ import urllib.error
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
-VERTEX_KEY   = os.environ.get("VERTEX_API_KEY", "")
-MODEL        = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
-PORT         = int(os.environ.get("PORT", "8765"))
-MASTER_KEY   = os.environ.get("MASTER_KEY", "")  # 可选：限制调用方的 key
+VERTEX_KEY        = os.environ.get("VERTEX_API_KEY", "")
+MODEL             = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
+PORT              = int(os.environ.get("PORT", "8765"))
+MASTER_KEY        = os.environ.get("MASTER_KEY", "")
+SYS_MAX_CHARS     = int(os.environ.get("SYS_MAX_CHARS", "3000"))  # 系统消息最大长度
 
 VERTEX_BASE  = "https://aiplatform.googleapis.com/v1/publishers/google/models"
 
@@ -36,6 +37,8 @@ def convert_request(body: dict) -> dict:
         if role == "system":
             text = content if isinstance(content, str) else \
                    "".join(c.get("text","") for c in content if isinstance(c,dict))
+            if len(text) > SYS_MAX_CHARS:
+                text = text[:SYS_MAX_CHARS]
             sys_parts.append({"text": text})
             continue
 

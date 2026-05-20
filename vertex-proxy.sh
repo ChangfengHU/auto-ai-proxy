@@ -101,6 +101,7 @@ def convert_request(body):
         parts = []
         if role == "system":
             text = content if isinstance(content,str) else "".join(c.get("text","") for c in content if isinstance(c,dict))
+            if len(text)>3000: text=text[:3000]
             sys_parts.append({"text": text}); continue
         if isinstance(content,str) and content: parts.append({"text": content})
         elif isinstance(content,list):
